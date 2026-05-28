@@ -35,6 +35,7 @@ Need stereo speaker diarization? Pass `diarization=true` and upload a stereo fil
 - [Customizing the model registry](#customizing-the-model-registry)
 - [Development](#development)
 - [Security notes](#security-notes)
+- [Credits](#credits)
 - [License](#license)
 
 ## Quick start
@@ -670,6 +671,10 @@ CPU isn't supported as a test target on purpose — whisper-large-v3 on a deskto
 Open CVEs against the pinned `torch` / `transformers` / `nemo-toolkit` versions are threat-modelled in the Dockerfile.cuda header comments — short version, talkies never calls `torch.load()` on untrusted files (weights come from hardcoded HF org repos via `snapshot_download`), never instantiates `Trainer` (inference only), and never runs the per-model conversion paths flagged by the transformers advisories. If you point `TALKIES_DATA_DIR` at a directory containing **arbitrary user-provided model weights**, you're on your own — talkies' auto-fetch only writes to `$TALKIES_DATA_DIR/models/<slug>/` from the hardcoded HuggingFace repo ids in `models.json`.
 
 Run `osv-scanner` against the image if you want a fresh advisory check before deploying.
+
+## Credits
+
+Inspired by [speaches](https://github.com/speaches-ai/speaches) — the OpenAI-compatible wire shape, the `/v1/models` + `/api/ps` resource-management surface, and the "one container, multiple ASR backends" packaging idea all come from there. talkies is a sibling project, not a fork: different backend mix (NeMo Canary/Parakeet + faster-whisper, no Kokoro/Piper TTS), different model-loading strategy (flat per-slug snapshot directories vs HF cache), CPU + CUDA images, and a few extras (stereo diarization, MCP endpoint, bearer auth, URL `file_path` fetching). If you need TTS or a more mature project, go use speaches.
 
 ## License
 
