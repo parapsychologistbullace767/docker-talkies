@@ -220,9 +220,14 @@ def list_voices() -> dict[str, Any]:
     """List available TTS voices across all loaded TTS models.
 
     Returned shape: ``{"voices": [{"voice": str, "model": str,
-    "default": bool}]}``. Pass any ``voice`` value to ``POST
-    /v1/audio/speech`` together with its ``model`` slug — voices are not
-    interchangeable across models (each TTS engine owns its own catalog).
+    "default": bool, "origin": str?}]}``. Pass any ``voice`` value to
+    ``POST /v1/audio/speech`` together with its ``model`` slug — voices
+    are not interchangeable across models (each TTS engine owns its own
+    catalog).
+
+    ``origin`` is set to ``"builtin"`` (shipped in the image) or
+    ``"custom"`` (mounted via ``/data/custom-voices/``) for backends that
+    expose a ``voice_origins()`` method; omitted otherwise.
     """
     out: list[dict[str, Any]] = []
     for mid, backend in BACKENDS.items():
@@ -234,10 +239,17 @@ def list_voices() -> dict[str, Any]:
         except RuntimeError as exc:
             log.warning("voice listing failed for %s: %s", mid, exc)
             continue
+        origins: dict[str, str] = {}
+        if hasattr(backend, "voice_origins"):
+            try:
+                origins = backend.voice_origins()
+            except Exception:  # noqa: BLE001
+                log.exception("voice_origins() failed for %s", mid)
         for v in catalog:
-            out.append(
-                {"voice": v, "model": mid, "default": v == default}
-            )
+            entry: dict[str, Any] = {"voice": v, "model": mid, "default": v == default}
+            if v in origins:
+                entry["origin"] = origins[v]
+            out.append(entry)
     return {"voices": out}
 
 

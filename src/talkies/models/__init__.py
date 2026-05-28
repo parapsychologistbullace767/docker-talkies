@@ -8,6 +8,7 @@ from .. import config
 from .kokoro import KokoroBackend
 from .multitask import MultitaskBackend
 from .parakeet import ParakeetBackend
+from .qwen3_tts import Qwen3TTSBackend
 from .salm import SalmBackend
 from .whisper import WhisperBackend
 
@@ -44,6 +45,14 @@ def build_backends(registry: dict[str, dict], device: str) -> dict[str, Any]:
             continue
         if executor == "kokoro":
             out[model_id] = KokoroBackend(
+                model_id=model_id,
+                repo=repo,
+                model_path=model_path,
+                device=device,
+            )
+            continue
+        if executor == "qwen3_tts":
+            out[model_id] = Qwen3TTSBackend(
                 model_id=model_id,
                 repo=repo,
                 model_path=model_path,

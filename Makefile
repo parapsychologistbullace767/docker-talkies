@@ -61,19 +61,19 @@ build-all: build build-cuda ## Build both production images
 # Local run targets.
 # -----------------------------------------------------------------------------
 
-run: build ## Run CPU image locally (uses ~/.talkies-models for cache)
-	mkdir -p $$HOME/.talkies-models
+run: build ## Run CPU image locally (uses ~/.talkies-data for models + voices + files)
+	mkdir -p $$HOME/.talkies-data
 	docker run --rm -it \
-		-v $$HOME/.talkies-models:/data \
+		-v $$HOME/.talkies-data:/data \
 		-e TALKIES_DEVICE=cpu \
 		-e HF_HUB_OFFLINE=0 \
 		-p $(PORT):8000 \
 		$(CPU_IMAGE)
 
 run-cuda: build-cuda ## Run CUDA image locally (requires --gpus all support)
-	mkdir -p $$HOME/.talkies-models
+	mkdir -p $$HOME/.talkies-data
 	docker run --rm -it --gpus all \
-		-v $$HOME/.talkies-models:/data \
+		-v $$HOME/.talkies-data:/data \
 		-e TALKIES_DEVICE=cuda \
 		-e HF_HUB_OFFLINE=0 \
 		-p $(PORT):8000 \

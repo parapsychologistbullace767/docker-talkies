@@ -11,7 +11,7 @@
 #
 # Env knobs:
 #   TALKIES_TEST_PORT       host port to publish (default 18000)
-#   TALKIES_TEST_CACHE      host dir for model cache (default ~/.talkies-models)
+#   TALKIES_TEST_CACHE      host dir for /data (models + voices + files; default ~/.talkies-data)
 #   TALKIES_TEST_IMAGE      image to use (default psyb0t/talkies:local-cuda)
 #   TALKIES_TEST_KEEP=1     don't `docker rm` the container at exit (debug)
 #   TALKIES_SKIP_BUILD=1    skip `make build-cuda` — use whatever's tagged
@@ -28,7 +28,7 @@ set -eo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 TALKIES_TEST_PORT="${TALKIES_TEST_PORT:-18000}"
-TALKIES_TEST_CACHE="${TALKIES_TEST_CACHE:-$HOME/.talkies-models}"
+TALKIES_TEST_CACHE="${TALKIES_TEST_CACHE:-$HOME/.talkies-data}"
 TALKIES_TEST_IMAGE="${TALKIES_TEST_IMAGE:-psyb0t/talkies:local-cuda}"
 CONTAINER_NAME="talkies-integration-test-$$"
 

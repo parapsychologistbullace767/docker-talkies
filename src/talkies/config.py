@@ -96,6 +96,18 @@ MODELS_DIR: Path = DATA_DIR / "models"
 # instead of re-uploading on every call.
 FILES_DIR: Path = DATA_DIR / "files"
 
+# User-supplied voice samples for one-shot voice-cloning TTS backends
+# (currently qwen3_tts). Each .wav file becomes a voice whose name is the
+# file's path relative to this dir, with the `.wav` stripped — so
+# `/data/custom-voices/foo/bar/me.wav` shows up as voice `foo/bar/me`.
+# Optional sibling `<name>.txt` provides the reference transcript and
+# `<name>.lang` the language label.
+CUSTOM_VOICES_DIR: Path = DATA_DIR / "custom-voices"
+
+# Built-in voice samples baked into the image at build time. Same naming
+# convention as CUSTOM_VOICES_DIR. Custom voices with the same name win.
+BUILTIN_VOICES_DIR: Path = Path("/opt/talkies/qwen3-voices")
+
 MODEL_IDLE_TIMEOUT_SECONDS: float = _duration_env("TALKIES_MODEL_TTL", 600.0)
 SWEEPER_INTERVAL_SECONDS: float = _duration_env("TALKIES_SWEEPER_INTERVAL", 60.0)
 LOAD_TIMEOUT_SECONDS: float = _duration_env("TALKIES_LOAD_TIMEOUT", 300.0)
@@ -156,10 +168,12 @@ def load_registry() -> dict[str, dict]:
             "canary_multitask",
             "canary_salm",
             "kokoro",
+            "qwen3_tts",
         ):
             raise ValueError(
                 f"{MODELS_FILE}: model {model_id!r} executor={executor!r} must be one of "
-                "'whisper', 'parakeet', 'canary_multitask', 'canary_salm', 'kokoro'"
+                "'whisper', 'parakeet', 'canary_multitask', 'canary_salm', 'kokoro', "
+                "'qwen3_tts'"
             )
     if ENABLED_MODELS:
         missing = [s for s in ENABLED_MODELS if s not in models]

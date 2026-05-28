@@ -47,6 +47,32 @@
       "modality": "tts",
       "default_voice": "af_heart",
       "languages": ["en", "es", "fr", "hi", "it", "pt"]
+    },
+    "qwen3-tts-0.6b": {
+      "repo": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+      "executor": "qwen3_tts",
+      "modality": "tts",
+      "default_voice": "alloy",
+      "default_language": "English",
+      "languages": [
+        "English",
+        "Chinese",
+        "Japanese",
+        "Korean",
+        "French",
+        "German",
+        "Spanish",
+        "Italian",
+        "Portuguese",
+        "Russian",
+        "Vietnamese",
+        "Thai",
+        "Indonesian",
+        "Arabic",
+        "Turkish",
+        "Polish",
+        "Dutch"
+      ]
     }
   }
 }

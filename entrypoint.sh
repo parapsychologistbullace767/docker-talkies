@@ -13,6 +13,8 @@ export TALKIES_MODELS_FILE TALKIES_DATA_DIR
 export TALKIES_ENABLED_MODELS
 
 mkdir -p "${TALKIES_DATA_DIR}/models"
+mkdir -p "${TALKIES_DATA_DIR}/files"
+mkdir -p "${TALKIES_DATA_DIR}/custom-voices"
 
 # On-disk layout: ${TALKIES_DATA_DIR}/models/<slug>/ contains the full
 # repo snapshot as plain files — no models--org--repo/snapshots/<hash>

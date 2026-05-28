@@ -203,5 +203,13 @@ talkies_expected_models() {
         return
     fi
     # Default CUDA full set, matches models.json.
-    echo "whisper-large-v3 whisper-large-v3-turbo distil-whisper-large-v3 parakeet-tdt-0.6b-v3 canary-180m-flash canary-1b-flash canary-qwen-2.5b"
+    echo "whisper-large-v3 whisper-large-v3-turbo distil-whisper-large-v3 parakeet-tdt-0.6b-v3 canary-180m-flash canary-1b-flash canary-qwen-2.5b qwen3-tts-0.6b"
+}
+
+# Subset of the expected models that are ASR (modality=asr per /v1/models).
+# Used by the per-model transcribe tests so they don't try to ASR a TTS slug.
+talkies_expected_asr_models() {
+    local models_json
+    models_json=$(talkies_get "/v1/models") || return 1
+    echo "$models_json" | jq -r '.data[] | select((.modality // "asr")=="asr") | .id'
 }

@@ -79,6 +79,7 @@ README.md
 Makefile
 Dockerfile.dev
 models/
+.talkies-data
 .talkies-models
 tests/
 benchs/

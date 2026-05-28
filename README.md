@@ -1,12 +1,22 @@
 # talkies
 
-> Self-hosted OpenAI-compatible speech service. `POST /v1/audio/transcriptions` against seven open ASR models, `POST /v1/audio/speech` against Kokoro TTS — one container, one wire format. Point your existing OpenAI client at it, change the model slug, and you're done.
+[![Docker Pulls](https://img.shields.io/docker/pulls/psyb0t/talkies?style=flat-square)](https://hub.docker.com/r/psyb0t/talkies)
+[![Docker Hub](https://img.shields.io/docker/v/psyb0t/talkies?sort=semver&label=Docker%20Hub&style=flat-square)](https://hub.docker.com/r/psyb0t/talkies)
+[![License: WTFPL](https://img.shields.io/badge/License-WTFPL-brightgreen.svg?style=flat-square)](http://www.wtfpl.net/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg?style=flat-square)](https://www.python.org/downloads/)
+
+> Self-hosted OpenAI-compatible speech service. `POST /v1/audio/transcriptions` against seven open ASR models, `POST /v1/audio/speech` against Kokoro TTS (fast, multilingual) and Qwen3-TTS (CUDA-only voice cloning) — one container, one wire format. Point your existing OpenAI client at it, change the model slug, and you're done.
 
 `POST /v1/audio/transcriptions` with a multipart `file` + a `model` slug → text back. `POST /v1/audio/speech` with a JSON body (`model` + `input` + `voice`) → audio bytes back. Same wire shape as OpenAI for both. The same client you point at `api.openai.com/v1/audio/{transcriptions,speech}` works here, you just change the base URL and the slug. That's the entire story.
 
 Swap the ASR slug — `whisper-large-v3`, `whisper-large-v3-turbo`, `distil-whisper-large-v3`, `parakeet-tdt-0.6b-v3`, `canary-180m-flash`, `canary-1b-flash`, `canary-qwen-2.5b` — and the transcription contract stays identical. Behind the scenes the request is dispatched to the right backend (faster-whisper for the whisper family, NeMo for everything else), the audio is normalized to 16 kHz mono WAV, long files are sliced via Silero VAD into ≤28-second speech regions, results are stitched back into one Whisper-shape timeline. None of that leaks into the wire shape. You just get text.
 
-For TTS the only slug is `kokoro-82m` (Kokoro-82M, Apache 2.0, ~41 voices across en/es/fr/hi/it/pt). Pass `model=kokoro-82m`, an `input` string, and a `voice` from `GET /v1/audio/voices` — the server runs Kokoro's in-process pipeline, encodes the raw 24 kHz PCM into your requested `response_format` (`mp3`/`opus`/`aac`/`flac`/`wav`/`pcm`) via ffmpeg, and streams the bytes back with the matching `Content-Type`.
+For TTS there are two slugs:
+
+- `kokoro-82m` (Kokoro-82M, Apache 2.0, ~41 voices across en/es/fr/hi/it/pt) — the fast in-process pipeline. Sub-second synthesis on CPU and trivial on GPU.
+- `qwen3-tts-0.6b` (Qwen3-TTS-12Hz-0.6B-Base, Apache 2.0, CUDA only) — voice cloning. Bring your own reference `.wav` (10-30s of clean speech is plenty), drop it into `/data/custom-voices/<your-name>.wav`, and synthesize in that speaker's voice via `voice=<your-name>`. Supports nested paths (`/data/custom-voices/clients/acme/jane.wav` → `voice=clients/acme/jane`). Three sample voices (`alloy`, `echo`, `fable`) ship baked into the image.
+
+Pass `model=<slug>`, an `input` string, and a `voice` from `GET /v1/audio/voices` — the server runs the matching backend's pipeline, encodes the raw PCM into your requested `response_format` (`mp3`/`opus`/`aac`/`flac`/`wav`/`pcm`) via ffmpeg, and streams the bytes back with the matching `Content-Type`.
 
 Need stereo speaker diarization on transcription? Pass `diarization=true` and upload a stereo file — left channel = speaker L, right channel = speaker R, output gets per-segment `channel` tags and the text is split into chronological `L:` / `R:` turn lines. Two-mic setups (interview rigs, podcast splits, dual-track ham recordings) end up with a clean transcript without you having to bolt a separate diarization model onto your stack.
 
@@ -49,14 +59,16 @@ Need stereo speaker diarization on transcription? Pass `diarization=true` and up
 
 ```bash
 docker run -d --name talkies \
-  -v $HOME/talkies-models:/data \
+  -v $HOME/talkies-data:/data \
   -p 8000:8000 \
   psyb0t/talkies:latest
 
 # On boot the entrypoint downloads every model in models.json into
 # /data/models/<slug>/ as flat directories — no HF cache, no
 # `models--org--repo/snapshots/<hash>` indirection. Each snapshot is
-# ~75MB-3GB. Bind-mount /data so subsequent restarts are no-ops.
+# ~75MB-3GB. /data also holds /data/files/ (staging area for the
+# /v1/files API) and /data/custom-voices/ (user-supplied voice clones
+# for Qwen3-TTS). Bind-mount /data so all three survive restarts.
 # To restrict the download set
 # `-e TALKIES_ENABLED_MODELS=whisper-large-v3-turbo,canary-180m-flash`
 # — only those slugs are pulled, and only those are queryable.
@@ -108,7 +120,7 @@ GPU variant: pull `psyb0t/talkies:latest-cuda` and add `--gpus all` to `docker r
 
 ## Supported models
 
-Seven ASR models + one TTS model, all publicly available with permissive licenses. They split into four engine families:
+Seven ASR models + two TTS models, all publicly available with permissive licenses. They split into five engine families:
 
 ### ASR (`POST /v1/audio/transcriptions`)
 
@@ -129,8 +141,16 @@ The three Whisper variants are tokenized + executed through [faster-whisper](htt
 | Slug | HF repo | Family | Image | Languages | License |
 |---|---|---|---|---|---|
 | `kokoro-82m` | `hexgrad/Kokoro-82M` | Kokoro (in-process, 24 kHz) | CPU + CUDA | en (American + British), es, fr, hi, it, pt | Apache 2.0 |
+| `qwen3-tts-0.6b` | `Qwen/Qwen3-TTS-12Hz-0.6B-Base` | Qwen3-TTS (faster-qwen3-tts, CUDA graphs) | CUDA only | 17 languages (en, zh, ja, ko, fr, de, es, it, pt, ru, vi, th, id, ar, tr, pl, nl) | Apache 2.0 |
 
-Kokoro-82M is an 82-million-parameter open-weight TTS model. It runs in-process via the [`kokoro`](https://pypi.org/project/kokoro/) PyPI package — no separate sidecar — and is fast enough on a 4-core CPU to be useful, so it ships in both images. The server exposes Kokoro's native voice naming (`af_heart`, `bm_george`, `ef_dora`, …) directly; there's no OpenAI alias mapping (no `alloy` / `echo` / `fable` synonyms). Discover voices via `GET /v1/audio/voices`.
+Kokoro-82M is an 82-million-parameter open-weight TTS model. It runs in-process via the [`kokoro`](https://pypi.org/project/kokoro/) PyPI package — no separate sidecar — and is fast enough on a 4-core CPU to be useful, so it ships in both images. The server exposes Kokoro's native voice naming (`af_heart`, `bm_george`, `ef_dora`, …) directly; there's no OpenAI alias mapping for that slug. Discover voices via `GET /v1/audio/voices`.
+
+Qwen3-TTS-0.6B is a 600-million-parameter voice-cloning model. It runs via [`faster-qwen3-tts`](https://pypi.org/project/faster-qwen3-tts/) (MIT-licensed wrapper that captures CUDA graphs around the talker + predictor heads for sub-second synthesis after a one-time ~30-60s warmup). The voice catalog comes from two on-disk dirs that both contribute `.wav` files (each one becomes a clone-target voice):
+
+- `/opt/talkies/qwen3-voices/` (baked into the image) — ships `alloy`, `echo`, `fable` as a starter set.
+- `/data/custom-voices/` (your data volume) — drop your own `.wav` files in. Nested subdirs are preserved: `/data/custom-voices/clients/acme/jane.wav` becomes voice `clients/acme/jane`. Custom voices shadow builtins with the same name.
+
+Each `<name>.wav` may have a sibling `<name>.txt` (transcript of what the speaker says in the reference — the model accepts an empty file, but a faithful transcript noticeably improves clone fidelity) and `<name>.lang` (language label, defaults to `English`). `GET /v1/audio/voices` returns an `origin: "builtin" | "custom"` field for each Qwen3 voice so a UI can tell baked-in samples from user-supplied clones at a glance.
 
 You don't have to care about any of this from the client side. You pick the slug; we handle the engine.
 
@@ -154,11 +174,13 @@ A short list of things that look like they might work but don't, so you don't wa
 | **Speaker identification beyond stereo channels** | Not supported | There's no voice clustering / speaker-embedding model in here. "Diarization" means "two-channel split", not "figure out who's talking from the audio". |
 | **Real-time / live mic input** | Out of scope | Send a file. If you need live transcription, buffer a few seconds client-side and POST chunks. |
 | **OpenAI-compatible translation endpoint (`/v1/audio/translations`)** | Not implemented | OpenAI's separate `/v1/audio/translations` (always-translate-to-English) isn't exposed. Use a Canary slug with `default_task=s2t_translation` instead. |
-| **OpenAI voice aliases (`alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer`)** | 400 | TTS exposes Kokoro's native voice names only. Discover them via `GET /v1/audio/voices`. Map client-side if your stack hard-codes the OpenAI names. |
-| **Japanese (`j*`) and Chinese (`z*`) Kokoro voices** | Filtered out | Those voices need the optional `misaki[ja]` / `misaki[zh]` extras, which pull large MeCab / pypinyin chains. The voice catalog only exposes the 41 voices whose lang codes work with the lightweight `espeak-ng`-based G2P shipped in the image. |
+| **OpenAI voice aliases for Kokoro (`alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer`)** | 400 | Kokoro exposes its native voice names only. (Note: `alloy` / `echo` / `fable` exist as `qwen3-tts-0.6b` voices — different model, different catalog. They're not aliases for Kokoro voices.) Discover voices via `GET /v1/audio/voices`. Map client-side if your stack hard-codes the OpenAI names against Kokoro. |
+| **Japanese (`j*`) and Chinese (`z*`) Kokoro voices** | Filtered out | Those voices need the optional `misaki[ja]` / `misaki[zh]` extras, which pull large MeCab / pypinyin chains. The voice catalog only exposes the 41 voices whose lang codes work with the lightweight `espeak-ng`-based G2P shipped in the image. (Qwen3-TTS does support Japanese / Chinese / Korean — pick that slug instead.) |
 | **TTS streaming output** | Not supported | The whole utterance is synthesized + encoded, then the full response body is returned. No SSE, no chunked audio. For long inputs split client-side. |
-| **TTS `instructions` field** | Accepted, ignored | Present for OpenAI compatibility. Kokoro has no instruction-conditioning input — `voice` is the only style control. |
-| **TTS `speed` outside `[0.25, 4.0]`** | Clamped | Values outside the OpenAI-documented range are silently clamped. |
+| **TTS `instructions` field** | Accepted, ignored | Present for OpenAI compatibility. Neither Kokoro nor Qwen3-TTS takes instruction-prompt input here — `voice` is the only style control on the Kokoro side; on the Qwen3 side `voice` selects the reference audio. |
+| **TTS `speed` on Qwen3-TTS** | Accepted, ignored | Qwen3-TTS has no speed-control parameter. The field is still validated against `[0.25, 4.0]` for compatibility but the backend ignores anything other than `1.0`. Kokoro applies `speed` as documented. |
+| **TTS `speed` outside `[0.25, 4.0]`** | Clamped | Values outside the OpenAI-documented range are silently clamped (applies to Kokoro; Qwen3-TTS ignores `speed` regardless). |
+| **Qwen3-TTS on CPU** | 400 / startup error | `faster-qwen3-tts` captures CUDA graphs at load time; there's no CPU path. The CPU image (`psyb0t/talkies:latest`) doesn't include the Qwen3-TTS dependencies at all — only the CUDA image (`psyb0t/talkies:latest-cuda`) does. |
 
 ## API — `POST /v1/audio/transcriptions`
 
@@ -410,12 +432,12 @@ curl -s http://localhost:8000/v1/audio/speech \
 
 | Field | Required | Default | Notes |
 |---|---|---|---|
-| `model` | yes | — | TTS model slug. Currently the only one is `kokoro-82m`. Unknown slug → 404. ASR slug → 400 (wrong endpoint). |
-| `input` | yes | — | Text to synthesize. Empty / whitespace-only → 400. No fixed length cap; for very long inputs split client-side and concatenate the resulting audio (Kokoro processes the whole input in one pass and isn't optimised for novel-length passages). |
-| `voice` | no | model `default_voice` (`af_heart` for `kokoro-82m`) | Kokoro voice name from `GET /v1/audio/voices`. Unknown → 400 with the catalog listed. |
+| `model` | yes | — | TTS model slug — one of `kokoro-82m`, `qwen3-tts-0.6b`. Unknown slug → 404. ASR slug → 400 (wrong endpoint). |
+| `input` | yes | — | Text to synthesize. Empty / whitespace-only → 400. No fixed length cap; for very long inputs split client-side and concatenate the resulting audio. |
+| `voice` | no | model `default_voice` (`af_heart` for kokoro, `alloy` for qwen3) | Voice name from `GET /v1/audio/voices` for the chosen model. Unknown → 400 with the catalog listed. Voices are not interchangeable across models — each engine owns its own catalog. |
 | `response_format` | no | `mp3` | One of `mp3`, `opus`, `aac`, `flac`, `wav`, `pcm`. See [Output formats](#output-formats). |
-| `speed` | no | `1.0` | Playback rate. Clamped to `[0.25, 4.0]`. |
-| `instructions` | no | — | Accepted for OpenAI compatibility, **currently ignored** — Kokoro has no instruction-conditioning input. |
+| `speed` | no | `1.0` | Playback rate. Clamped to `[0.25, 4.0]`. Kokoro supports speed control; Qwen3-TTS does not — non-1.0 values are silently ignored for that backend. |
+| `instructions` | no | — | Accepted for OpenAI compatibility, **currently ignored** — neither Kokoro nor Qwen3-TTS exposes an instruction-conditioning input through this endpoint. |
 
 ### Voices (`GET /v1/audio/voices`)
 
@@ -437,7 +459,11 @@ curl -s http://localhost:8000/v1/audio/voices | jq
     {"voice": "ff_siwis",  "model": "kokoro-82m", "default": false},
     {"voice": "hf_alpha",  "model": "kokoro-82m", "default": false},
     {"voice": "if_sara",   "model": "kokoro-82m", "default": false},
-    {"voice": "pf_dora",   "model": "kokoro-82m", "default": false}
+    {"voice": "pf_dora",   "model": "kokoro-82m", "default": false},
+    {"voice": "alloy",                "model": "qwen3-tts-0.6b", "default": true,  "origin": "builtin"},
+    {"voice": "echo",                 "model": "qwen3-tts-0.6b", "default": false, "origin": "builtin"},
+    {"voice": "fable",                "model": "qwen3-tts-0.6b", "default": false, "origin": "builtin"},
+    {"voice": "clients/acme/jane",    "model": "qwen3-tts-0.6b", "default": false, "origin": "custom"}
   ]
 }
 ```
@@ -454,7 +480,11 @@ Kokoro voice names encode `<lang_code><gender>_<name>`:
 | `if_` / `im_` | Italian |
 | `pf_` / `pm_` | Portuguese (Brazilian) |
 
-41 voices ship in the image. The Japanese (`jf_*` / `jm_*`) and Chinese (`zf_*` / `zm_*`) voices in Kokoro's upstream voice pack are filtered out because they require the optional `misaki[ja]` / `misaki[zh]` extras (MeCab + pypinyin chains) which would add hundreds of MB to the image for languages most users don't need.
+41 Kokoro voices ship in the image. The Japanese (`jf_*` / `jm_*`) and Chinese (`zf_*` / `zm_*`) voices in Kokoro's upstream voice pack are filtered out because they require the optional `misaki[ja]` / `misaki[zh]` extras (MeCab + pypinyin chains) which would add hundreds of MB to the image for languages most users don't need.
+
+Qwen3-TTS voice names come from the on-disk catalog (see [Supported models → TTS](#tts-post-v1audiospeech)). Three builtin voices (`alloy`, `echo`, `fable`) ship in the image. Drop your own `.wav` reference samples into `/data/custom-voices/` (the host mount) and they show up tagged `origin: "custom"`. The path of the wav relative to that dir, with the `.wav` stripped, is the voice name — so `/data/custom-voices/clients/acme/jane.wav` becomes `clients/acme/jane`. A custom voice with the same name as a builtin shadows the builtin.
+
+To improve clone fidelity, drop a sibling `<name>.txt` (transcript of what the speaker is saying in the reference audio) and optionally `<name>.lang` (one of `English`, `Chinese`, `Japanese`, `Korean`, `French`, `German`, `Spanish`, `Italian`, `Portuguese`, `Russian`, `Vietnamese`, `Thai`, `Indonesian`, `Arabic`, `Turkish`, `Polish`, `Dutch`; defaults to `English`). Reference audio should be 10-30 seconds of clean speech in the target speaker's voice — no music, minimal background noise, single speaker.
 
 ### Output formats
 
@@ -480,8 +510,8 @@ Same envelope as the transcription endpoint — application errors as `{"detail"
 | 401 | `TALKIES_AUTH_TOKEN` set, missing / wrong bearer |
 | 404 | unknown `model` slug |
 | 422 | Pydantic validation (missing required fields, wrong types) |
-| 500 | unhandled ffmpeg or kokoro internal failure |
-| 503 | kokoro snapshot files missing under `${TALKIES_DATA_DIR}/models/kokoro-82m/` (image was started with the model excluded from `TALKIES_ENABLED_MODELS` but the slug is still being called) |
+| 500 | unhandled ffmpeg / kokoro / qwen3-tts internal failure |
+| 503 | snapshot files missing under `${TALKIES_DATA_DIR}/models/<slug>/` (the model was excluded from `TALKIES_ENABLED_MODELS` at boot but is still being called); or `qwen3-tts-0.6b` requested with no voices on disk |
 
 ## Resource-management endpoints (Ollama-style)
 
@@ -638,13 +668,13 @@ If you don't set the env var (or set it to an empty string), talkies stays wide 
 | Image | Tag | Platforms | Models served | Image size (approx) |
 |---|---|---|---|---|
 | CPU | `psyb0t/talkies:latest` | `linux/amd64` | 3× Whisper, 1× Canary-180m-Flash, Kokoro-82M | ~3 GB |
-| CUDA | `psyb0t/talkies:latest-cuda` | `linux/amd64` | all seven ASR + Kokoro-82M | ~9 GB |
+| CUDA | `psyb0t/talkies:latest-cuda` | `linux/amd64` | all seven ASR + Kokoro-82M + Qwen3-TTS-0.6B | ~11 GB |
 
-Why split the model list? Whisper and the tiny Canary work fine on CPU. Parakeet-TDT, Canary-1B-Flash, and Canary-Qwen-2.5B don't — Parakeet-TDT is awkward on CPU because its decoder is autoregressive and slow without batched-attention kernels, Canary-1B and Canary-Qwen are flat-out too big to be useful in software-only inference. Rather than ship a CPU image that *technically* serves models nobody would use on CPU, the CPU image only lists what'll actually finish in a sane time. Kokoro-82M ships in both images — at 82M params it synthesizes faster than real-time on a 4-core CPU.
+Why split the model list? Whisper and the tiny Canary work fine on CPU. Parakeet-TDT, Canary-1B-Flash, Canary-Qwen-2.5B, and Qwen3-TTS-0.6B don't — Parakeet-TDT is awkward on CPU because its decoder is autoregressive and slow without batched-attention kernels, Canary-1B and Canary-Qwen are flat-out too big to be useful in software-only inference, and Qwen3-TTS via `faster-qwen3-tts` captures CUDA graphs at load time (no CPU code path exists). Rather than ship a CPU image that *technically* serves models nobody would use on CPU, the CPU image only lists what'll actually finish in a sane time. Kokoro-82M ships in both images — at 82M params it synthesizes faster than real-time on a 4-core CPU.
 
 Both images are amd64-only — `nemo_toolkit[asr]` and `faster-whisper` have aarch64 wheels for some of the chain but the full stack doesn't currently resolve cleanly on arm64 at the pinned versions. If you need arm64, file an issue with your specific use case.
 
-The CUDA image also runs on CPU if `--gpus all` isn't passed — it'll bind to CPU, ignore the CUDA env vars, and refuse the GPU-only slugs at first call. Useful for debugging without a GPU host.
+The CUDA image also runs on CPU if `--gpus all` isn't passed — it'll bind to CPU, ignore the CUDA env vars, and refuse the GPU-only slugs at first call. Useful for debugging without a GPU host (but `qwen3-tts-0.6b` will hard-fail at load time without CUDA).
 
 ## Architecture
 
@@ -702,7 +732,7 @@ The image ships with `models.json` (CUDA) or `models-cpu.json` (CPU) baked in. Y
 
 ```bash
 docker run -d --name talkies \
-  -v $HOME/talkies-models:/data \
+  -v $HOME/talkies-data:/data \
   -v $PWD/my-models.json:/app/models.json:ro \
   -p 8000:8000 \
   psyb0t/talkies:latest
@@ -763,7 +793,7 @@ make build           # build CPU production image
 make build-cuda      # build CUDA production image
 make build-all       # both
 
-make run             # build + run CPU image, weights cache to ~/.talkies-models
+make run             # build + run CPU image, /data persisted at ~/.talkies-data
 make run-cuda        # build + run CUDA image with --gpus all
 
 make test-integration  # CUDA integration suite — builds + boots talkies, hits the HTTP surface
@@ -789,7 +819,7 @@ Env knobs:
 | Var | Default | Effect |
 |---|---|---|
 | `TALKIES_TEST_PORT` | `18000` | Host port to publish. |
-| `TALKIES_TEST_CACHE` | `~/.talkies-models` | Bind-mounted to `/data` so weights persist across runs. |
+| `TALKIES_TEST_CACHE` | `~/.talkies-data` | Bind-mounted to `/data` so models / voices / files persist across runs. |
 | `TALKIES_TEST_IMAGE` | `psyb0t/talkies:local-cuda` | Image under test. |
 | `TALKIES_SKIP_BUILD` | (unset) | Set to `1` to skip `make build-cuda` and reuse what's tagged. |
 | `TALKIES_TEST_KEEP` | (unset) | Set to `1` to leave the test container running on exit (for `docker logs` / manual poking). |

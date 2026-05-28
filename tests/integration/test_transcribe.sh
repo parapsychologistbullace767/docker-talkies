@@ -19,7 +19,7 @@ test_talkies_transcribe_each_model_json() {
     fi
 
     local mid out text rc=0
-    for mid in $(talkies_expected_models); do
+    for mid in $(talkies_expected_asr_models); do
         out=$(talkies_transcribe "$mid" "$fixture" "json") || {
             echo "  FAIL: $mid json transcribe"
             rc=1
@@ -50,7 +50,7 @@ test_talkies_transcribe_each_model_verbose_json() {
     fi
 
     local mid out rc=0 segs words
-    for mid in $(talkies_expected_models); do
+    for mid in $(talkies_expected_asr_models); do
         out=$(talkies_transcribe "$mid" "$fixture" "verbose_json" \
             "timestamp_granularities[]=segment" \
             "timestamp_granularities[]=word") || {
@@ -95,7 +95,7 @@ test_talkies_transcribe_each_model_srt() {
     fi
 
     local mid out rc=0
-    for mid in $(talkies_expected_models); do
+    for mid in $(talkies_expected_asr_models); do
         out=$(talkies_transcribe "$mid" "$fixture" "srt") || {
             echo "  FAIL: $mid srt transcribe"
             rc=1
@@ -125,7 +125,7 @@ test_talkies_transcribe_each_model_vtt() {
     fi
 
     local mid out rc=0
-    for mid in $(talkies_expected_models); do
+    for mid in $(talkies_expected_asr_models); do
         out=$(talkies_transcribe "$mid" "$fixture" "vtt") || {
             echo "  FAIL: $mid vtt transcribe"
             rc=1

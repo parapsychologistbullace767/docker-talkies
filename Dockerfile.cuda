@@ -40,7 +40,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 #   nemo-toolkit[asr] 2.7.3    — Apr 2026, adds canary2 prompt formatter (180m-flash/1b-flash).
 #   lightning/pytorch-lightning 2.4.0 — NeMo 2.7.3 hard-pins lightning<=2.4.0.
 #   huggingface-hub 0.35.3     — last release with symlink->copy fallback (SMB cache).
-#   transformers 4.57.6        — matches NeMo's ~=4.57.0 constraint.
+#   transformers 4.57.3        — qwen-tts hard-pin; within NeMo's ~=4.57.0 tolerance.
+#   faster-qwen3-tts 0.2.6     — CUDA-graph-optimized Qwen3-TTS wrapper (MIT).
+#                                Pulls qwen-tts 0.1.1 (Apache-2.0) as a transitive dep.
 # Known open CVEs (threat-modelled; not exploitable in this app):
 #   PYSEC-2026-139 (torch pt2 load): we don't torch.load() untrusted files.
 #   GHSA-75m9-98v2-hjpm (PL load_from_checkpoint): we don't call it.
@@ -55,7 +57,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         "nemo-toolkit[asr]==2.7.3" \
         "lightning==2.4.0" \
         "pytorch-lightning==2.4.0" \
-        "transformers==4.57.6" \
+        "transformers==4.57.3" \
         "huggingface-hub==0.35.3" \
         "soundfile==0.13.1" \
         "librosa==0.10.2" \
@@ -68,6 +70,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         "onnxruntime==1.20.1" \
         "numpy==1.26.4" \
         "kokoro==0.9.4" \
+        "faster-qwen3-tts==0.2.6" \
     && uv pip install --python /opt/venv/bin/python --no-config \
         "en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
 
@@ -86,6 +89,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HF_HOME=/data/hf \
     HF_HUB_OFFLINE=1 \
     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+    TORCHINDUCTOR_CACHE_DIR=/tmp/torch_inductor \
     LD_LIBRARY_PATH=/opt/venv/lib/python3.12/site-packages/nvidia/cudnn/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cublas/lib \
     DEBIAN_FRONTEND=noninteractive
 
@@ -111,6 +115,7 @@ COPY --from=builder /opt/venv /opt/venv
 COPY --chown=talkies:talkies src ./src
 COPY --chown=talkies:talkies pyproject.toml ./
 COPY --chown=talkies:talkies models.json /app/models.json
+COPY --chown=talkies:talkies voices/qwen3/ /opt/talkies/qwen3-voices/
 COPY --chown=talkies:talkies entrypoint.sh /usr/local/bin/talkies-entrypoint
 RUN chmod +x /usr/local/bin/talkies-entrypoint
 

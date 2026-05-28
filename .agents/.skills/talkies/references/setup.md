@@ -4,52 +4,54 @@
 
 - Docker
 - `linux/amd64` host (no arm64 images — `nemo_toolkit[asr]` + chain doesn't resolve cleanly on aarch64)
-- Optional: NVIDIA GPU + NVIDIA Container Toolkit for the CUDA image
-- ~3 GB disk for the CPU image, ~9 GB for the CUDA image
-- ~13 GB additional disk for model weights (CPU image set, includes Kokoro ~330 MB) or ~30 GB (full CUDA set)
+- Optional: NVIDIA GPU + NVIDIA Container Toolkit for the CUDA image (required for `qwen3-tts-0.6b` voice cloning)
+- ~3 GB disk for the CPU image, ~11 GB for the CUDA image
+- ~13 GB additional disk for model weights (CPU image set, includes Kokoro ~330 MB) or ~32 GB (full CUDA set including Qwen3-TTS ~2.2 GB)
 - ~4 GB RAM minimum (whisper-large-v3 needs the working set + overhead); 12 GB+ VRAM for the GPU-only models
 
 ## Quick Install
 
 ### CPU
 
-Serves 3× Whisper + `canary-180m-flash` for ASR, plus `kokoro-82m` for TTS. The CUDA-only ASR models aren't worth running on CPU.
+Serves 3× Whisper + `canary-180m-flash` for ASR, plus `kokoro-82m` for TTS. The CUDA-only ASR models aren't worth running on CPU, and `qwen3-tts-0.6b` is CUDA-only.
 
 ```bash
 docker run -d --name talkies \
-  -v $HOME/talkies-models:/data \
+  -v $HOME/talkies-data:/data \
   -p 8000:8000 \
   psyb0t/talkies:latest
 ```
 
 ### CUDA
 
-Serves all seven ASR models plus `kokoro-82m` TTS. Requires the NVIDIA Container Toolkit on the host.
+Serves all seven ASR models plus both TTS engines (`kokoro-82m`, `qwen3-tts-0.6b`). Requires the NVIDIA Container Toolkit on the host.
 
 ```bash
 docker run -d --name talkies \
   --gpus all \
-  -v $HOME/talkies-models:/data \
+  -v $HOME/talkies-data:/data \
   -p 8000:8000 \
   psyb0t/talkies:latest-cuda
 ```
 
-The CUDA image also runs without `--gpus all` — it binds to CPU, ignores CUDA env vars, and refuses the GPU-only slugs at first call. Useful for debugging without a GPU host.
+The CUDA image also runs without `--gpus all` — it binds to CPU, ignores CUDA env vars, and refuses the GPU-only slugs at first call. Useful for debugging without a GPU host. `qwen3-tts-0.6b` will fail loudly on first request in that mode (the upstream `FasterQwen3TTS.from_pretrained` raises `ValueError` on non-CUDA).
 
 **Verify:** `curl http://localhost:8000/healthz` returns `{"ok": true, "device": "...", "models": [...]}` once boot's done.
 
-**First boot:** the entrypoint downloads every model in `models.json` into `/data/models/<slug>/`. CPU set is ~13 GB (includes Kokoro), CUDA full set is ~30 GB. Bind-mount `/data` so subsequent restarts are no-ops. Restrict the download set with `TALKIES_ENABLED_MODELS` to avoid pulling everything.
+**First boot:** the entrypoint downloads every model in `models.json` into `/data/models/<slug>/` and creates `/data/files/` + `/data/custom-voices/`. CPU set is ~13 GB (includes Kokoro), CUDA full set is ~32 GB (includes Qwen3-TTS ~2.2 GB). Bind-mount `/data` so subsequent restarts are no-ops. Restrict the download set with `TALKIES_ENABLED_MODELS` to avoid pulling everything.
 
 ## CPU vs CUDA Images
 
 | Image | Tag | Platforms | Models served | Image size |
 |---|---|---|---|---|
 | CPU | `psyb0t/talkies:latest` | `linux/amd64` | 3× Whisper, 1× Canary-180m-Flash, Kokoro-82M | ~3 GB |
-| CUDA | `psyb0t/talkies:latest-cuda` | `linux/amd64` | all seven ASR + Kokoro-82M | ~9 GB |
+| CUDA | `psyb0t/talkies:latest-cuda` | `linux/amd64` | all seven ASR + Kokoro-82M + Qwen3-TTS-0.6B | ~11 GB |
 
-The CPU image only ships ASR models that actually finish in a sane time without a GPU. Parakeet-TDT is autoregressive (slow on CPU). Canary-1B and Canary-Qwen-2.5B are flat-out too big. Use the CUDA image for those even if you mostly run on CPU — it gracefully falls back. Kokoro-82M ships in both images — at 82M params it synthesizes faster than real-time on a 4-core CPU, no GPU needed.
+The CPU image only ships ASR models that actually finish in a sane time without a GPU. Parakeet-TDT is autoregressive (slow on CPU). Canary-1B and Canary-Qwen-2.5B are flat-out too big. Use the CUDA image for those even if you mostly run on CPU — it gracefully falls back (except for `qwen3-tts-0.6b`, which hard-fails on non-CUDA). Kokoro-82M ships in both images — at 82M params it synthesizes faster than real-time on a 4-core CPU, no GPU needed.
 
 Both images bake `espeak-ng` into the runtime layer because Kokoro's G2P for es/fr/hi/it/pt routes through it via `misaki.espeak.EspeakG2P`. The Python `kokoro==0.9.4` package and its lightweight dependency chain (`misaki`, no `[ja]` / `[zh]` extras) are pinned alongside the rest of the ML stack in `Dockerfile` / `Dockerfile.cuda`.
+
+The CUDA image additionally bakes the `faster-qwen3-tts==0.2.6` MIT wrapper and three builtin Qwen3 reference voices (`alloy`, `echo`, `fable`) under `/opt/talkies/qwen3-voices/`. The model weights (`Qwen/Qwen3-TTS-12Hz-0.6B-Base`, Apache-2.0) are downloaded into `/data/models/qwen3-tts-0.6b/` at first boot like every other model.
 
 ## Environment Variables
 
@@ -77,7 +79,7 @@ Container binds `0.0.0.0:8000` unconditionally. Control network exposure at `doc
 
 | Var | Default | What it does |
 |---|---|---|
-| `TALKIES_DATA_DIR` | `/data` | Base data dir. Model snapshots → `$TALKIES_DATA_DIR/models/<slug>/` (flat per-model dirs, no HF cache layout). Staged uploads + URL downloads → `$TALKIES_DATA_DIR/files/`. Bind-mount to persist across restarts. |
+| `TALKIES_DATA_DIR` | `/data` | Base data dir. Model snapshots → `$TALKIES_DATA_DIR/models/<slug>/` (flat per-model dirs, no HF cache layout). Staged uploads + URL downloads → `$TALKIES_DATA_DIR/files/`. Qwen3-TTS custom clone voices → `$TALKIES_DATA_DIR/custom-voices/` (nested subdirs preserved as voice names). Bind-mount to persist across restarts. |
 
 ### Lifecycle (idle sweeper + load timeouts)
 
@@ -119,45 +121,45 @@ Audio longer than `TALKIES_VAD_CHUNK_THRESHOLD` seconds gets sliced through Sile
 # Restrict to just the small/fast models (saves first-boot download time).
 docker run -d -p 8000:8000 \
   -e TALKIES_ENABLED_MODELS=whisper-large-v3-turbo,canary-180m-flash \
-  -v $HOME/talkies-models:/data \
+  -v $HOME/talkies-data:/data \
   psyb0t/talkies:latest
 
 # Preload at boot so the first request doesn't pay the cold-load tax.
 docker run -d -p 8000:8000 \
   -e TALKIES_ENABLED_MODELS=whisper-large-v3-turbo \
   -e TALKIES_PRELOAD=whisper-large-v3-turbo \
-  -v $HOME/talkies-models:/data \
+  -v $HOME/talkies-data:/data \
   psyb0t/talkies:latest
 
 # Bearer auth on a public-facing deployment.
 docker run -d -p 8000:8000 \
   -e TALKIES_AUTH_TOKEN=$(openssl rand -hex 32) \
   -e TALKIES_BLOCK_PRIVATE_DOWNLOADS=true \
-  -v $HOME/talkies-models:/data \
+  -v $HOME/talkies-data:/data \
   psyb0t/talkies:latest
 
 # Loopback only (rely on reverse proxy for external access).
 docker run -d -p 127.0.0.1:8000:8000 \
-  -v $HOME/talkies-models:/data \
+  -v $HOME/talkies-data:/data \
   psyb0t/talkies:latest
 
 # Disable auto-unload (keep model resident forever).
 docker run -d -p 8000:8000 \
   -e TALKIES_MODEL_TTL=0 \
-  -v $HOME/talkies-models:/data \
+  -v $HOME/talkies-data:/data \
   psyb0t/talkies:latest
 
 # Bump upload + download caps for huge files.
 docker run -d -p 8000:8000 \
   -e TALKIES_MAX_UPLOAD_BYTES=1073741824 \
   -e TALKIES_MAX_DOWNLOAD_BYTES=10737418240 \
-  -v $HOME/talkies-models:/data \
+  -v $HOME/talkies-data:/data \
   psyb0t/talkies:latest
 
 # Pin to a specific GPU on a multi-GPU host.
 docker run -d --gpus '"device=1"' -p 8000:8000 \
   -e TALKIES_DEVICE=cuda:0 \
-  -v $HOME/talkies-models:/data \
+  -v $HOME/talkies-data:/data \
   psyb0t/talkies:latest-cuda
 ```
 
@@ -175,7 +177,7 @@ The image ships with `models.json` (CUDA) or `models-cpu.json` (CPU) baked in. O
 
 ```bash
 docker run -d --name talkies \
-  -v $HOME/talkies-models:/data \
+  -v $HOME/talkies-data:/data \
   -v $PWD/my-models.json:/app/models.json:ro \
   -p 8000:8000 \
   psyb0t/talkies:latest
@@ -210,12 +212,13 @@ File structure:
 | Field | Required | Notes |
 |---|---|---|
 | `repo` | yes | HuggingFace repo id. Pulled via `snapshot_download(local_dir=$TALKIES_DATA_DIR/models/<slug>)` — flat directory keyed by slug, no HF cache indirection. |
-| `executor` | yes | One of `whisper`, `parakeet`, `canary_multitask`, `canary_salm`, `kokoro`. Other values fail startup. |
-| `modality` | no | `asr` (default) or `tts`. Drives endpoint guards (`/v1/audio/transcriptions` requires ASR; `/v1/audio/speech` requires TTS) and the `modality` field on `/v1/models` entries. The `kokoro` executor implies `tts`; the four ASR executors imply `asr`. |
+| `executor` | yes | One of `whisper`, `parakeet`, `canary_multitask`, `canary_salm`, `kokoro`, `qwen3_tts`. Other values fail startup. |
+| `modality` | no | `asr` (default) or `tts`. Drives endpoint guards (`/v1/audio/transcriptions` requires ASR; `/v1/audio/speech` requires TTS) and the `modality` field on `/v1/models` entries. The `kokoro` and `qwen3_tts` executors imply `tts`; the four ASR executors imply `asr`. |
 | `default_source_lang` | no | ASR only. Used when the request omits `language`. |
 | `default_target_lang` | no | ASR only. Used by Canary multitask for translation tasks. |
 | `default_task` | no | ASR only. `asr` (transcribe) or `s2t_translation` (Canary multitask only). Default `asr`. |
-| `default_voice` | no | TTS only. Used when the request omits `voice`. Falls back to the first voice the backend reports. |
+| `default_voice` | no | TTS only. Used when the request omits `voice`. Falls back to the first voice the backend reports. For `qwen3_tts`, the voice name is a path relative to the voices dir (`alloy`, `team-a/jane`). |
+| `default_language` | no | `qwen3_tts` only. Default reference-clip language label (defaults to `English`). Overridden per-voice by a sibling `.lang` file next to the wav. |
 | `languages` | no | Informational only — listed in error messages, not enforced. |
 | `dependencies` | no | List of extra HuggingFace repo ids the executor needs at load time (e.g. `canary-qwen-2.5b` instantiates a Qwen3 tokenizer separately). Each is `snapshot_download`'d into the standard HF cache (`HF_HOME`) at entrypoint. |
 
@@ -266,6 +269,60 @@ For a single-purpose deployment, ship a one-entry registry to skip pulling every
 ```
 
 Equivalent to setting `TALKIES_ENABLED_MODELS=whisper-large-v3-turbo` against the default registry — but with a custom registry you can add slugs that aren't in the shipped one.
+
+## Qwen3-TTS Custom Voices
+
+`qwen3-tts-0.6b` is a voice-cloning TTS — it takes a reference `.wav` and clones the speaker's timbre / prosody onto whatever text you supply. The voice catalog is built from two on-disk dirs that are merged at request time (live, no restart):
+
+| Dir | Where it lives | Origin tag | Purpose |
+|---|---|---|---|
+| Builtin | `/opt/talkies/qwen3-voices/` (baked into the CUDA image) | `builtin` | Three curated samples (`alloy`, `echo`, `fable`) so the model works out of the box. |
+| Custom | `/data/custom-voices/` (host-mounted) | `custom` | Your reference clips. Drop in, get back. |
+
+Voice names are the wav's path relative to the parent dir with `.wav` stripped. Nested subdirs are preserved:
+
+```
+$HOME/talkies-data/custom-voices/
+├── jane.wav              → voice "jane"
+├── jane.txt              # optional reference transcript
+├── jane.lang             # optional language label (defaults "English")
+└── team-a/
+    └── narrator-bob.wav  → voice "team-a/narrator-bob"
+```
+
+Custom voices **shadow** builtin voices with the same name — dropping `custom-voices/alloy.wav` overrides the builtin `alloy` (its `origin` field on `/v1/audio/voices` flips from `builtin` to `custom`).
+
+**Sibling metadata** next to each `<name>.wav`:
+- `<name>.txt` — reference transcript for the clip. Optional; the model accepts an empty string. Clone fidelity is noticeably better with a faithful transcript.
+- `<name>.lang` — language label string passed through to the model. Optional; defaults to `English`. Use this for non-English reference clips.
+
+**Recommended reference clips:**
+- 10-30 s of clean speech from the target speaker.
+- No background music, no overlapping voices, low noise floor.
+- 16+ kHz, mono preferred (model resamples internally but garbage-in-garbage-out applies).
+
+**Use a custom voice:**
+
+```bash
+mkdir -p $HOME/talkies-data/custom-voices/team-a
+cp jane-reading.wav $HOME/talkies-data/custom-voices/team-a/jane.wav
+echo "And the silken sad uncertain rustling of each purple curtain." \
+  > $HOME/talkies-data/custom-voices/team-a/jane.txt
+
+curl -s http://localhost:8000/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "qwen3-tts-0.6b",
+        "voice": "team-a/jane",
+        "input": "Hello from a cloned voice.",
+        "response_format": "wav"
+      }' \
+  --output cloned.wav
+```
+
+**Path-traversal guard:** symlinks under `custom-voices/` whose `resolve()` escapes the dir are skipped at scan time, so a hostile mount can't be used to read arbitrary host files as a voice prompt. Symlinks pointing back into the same dir are fine.
+
+**CUDA only.** Qwen3-TTS hard-fails on CPU (`FasterQwen3TTS.from_pretrained` raises `ValueError`). The model surfaces as `loaded: false` until the first request; first-request load includes CUDA-graph capture (~30-60 s on a mid-range GPU). Subsequent generations are sub-second.
 
 ## OpenClaw / ClawHub Config
 

@@ -78,11 +78,17 @@ docker-compose.dev.yml
 *.safetensors
 *.bin
 
-# Local HF cache (when running `make run` against ~/.talkies-models)
+# Local /data dir (when running `make run` against ~/.talkies-data)
+.talkies-data/
+# Legacy name — kept so old worktrees don't accidentally stage the dir.
 .talkies-models/
 
 # Research dirs (not part of the project)
 .research_files/
+index-tts/
+
+# Integration test cache (HF snapshots downloaded by the runner)
+.talkies-test-cache/
 
 # User-supplied test fixtures (audio dropped in by contributors per .gitkeep)
 tests/integration/.fixtures/*
