@@ -145,7 +145,7 @@ talkies_speech() {
 talkies_pick_fast_asr_model() {
     local models_json prefer slug
     models_json=$(talkies_get "/v1/models") || return 1
-    for prefer in parakeet-tdt-0.6b-v3 whisper-large-v3-turbo distil-whisper-large-v3 canary-180m-flash whisper-large-v3; do
+    for prefer in parakeet-tdt-0.6b-v3 whisper-large-v3-turbo canary-180m-flash whisper-large-v3; do
         if echo "$models_json" | jq -e --arg p "$prefer" '.data[] | select(.id==$p)' >/dev/null 2>&1; then
             echo "$prefer"
             return 0
@@ -203,7 +203,7 @@ talkies_expected_models() {
         return
     fi
     # Default CUDA full set, matches models.json.
-    echo "whisper-large-v3 whisper-large-v3-turbo distil-whisper-large-v3 parakeet-tdt-0.6b-v3 canary-180m-flash canary-1b-flash canary-qwen-2.5b qwen3-tts-0.6b"
+    echo "whisper-large-v3 whisper-large-v3-turbo parakeet-tdt-0.6b-v3 canary-180m-flash canary-1b-flash canary-qwen-2.5b qwen3-tts-0.6b"
 }
 
 # Subset of the expected models that are ASR (modality=asr per /v1/models).

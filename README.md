@@ -18,7 +18,7 @@ c.audio.speech.create(model="qwen3-tts-0.6b", voice="alloy", input="hello").stre
 
 The same client you use against `api.openai.com` works here — only the base URL and the slug change. That's the entire story.
 
-- **7 ASR backends** — Whisper (v3 / turbo / distil), Parakeet-TDT, Canary-180M-Flash / 1B-Flash / Canary-Qwen-2.5B. Whisper-shape response across all of them; long files get sliced via Silero VAD and stitched back.
+- **6 ASR backends** — Whisper (v3 / turbo), Parakeet-TDT, Canary-180M-Flash / 1B-Flash / Canary-Qwen-2.5B. Whisper-shape response across all of them; long files get sliced via Silero VAD and stitched back.
 - **2 TTS engines** — Kokoro-82M (~41 voices across en/es/fr/hi/it/pt, sub-second on CPU) and Qwen3-TTS-0.6B (CUDA-only voice cloning).
 - **Voice cloning** — drop a 10-30 s reference `.wav` into `/data/custom-voices/<name>.wav`, synth as `voice=<name>`. Nested paths preserved (`clients/acme/jane.wav` → `voice=clients/acme/jane`). Live re-scan, no restart.
 - **Hot model swap + idle eviction** — one GPU pool serves both modalities, Ollama-style `/api/ps` for introspection, `DELETE /api/ps/<slug>` to evict.
@@ -125,7 +125,7 @@ curl -s -X POST  http://localhost:8000/unload | jq    # evict everything
 
 `POST /v1/audio/transcriptions` with a multipart `file` + a `model` slug → text back. `POST /v1/audio/speech` with a JSON body (`model` + `input` + `voice`) → audio bytes back. Same wire shape as OpenAI for both.
 
-Swap the ASR slug — `whisper-large-v3`, `whisper-large-v3-turbo`, `distil-whisper-large-v3`, `parakeet-tdt-0.6b-v3`, `canary-180m-flash`, `canary-1b-flash`, `canary-qwen-2.5b` — and the transcription contract stays identical. Behind the scenes the request is dispatched to the right backend (faster-whisper for the whisper family, NeMo for everything else), audio is normalized to 16 kHz mono WAV, long files are sliced via Silero VAD into ≤28-second speech regions, results are stitched back into one Whisper-shape timeline. None of that leaks into the wire shape. You just get text.
+Swap the ASR slug — `whisper-large-v3`, `whisper-large-v3-turbo`, `parakeet-tdt-0.6b-v3`, `canary-180m-flash`, `canary-1b-flash`, `canary-qwen-2.5b` — and the transcription contract stays identical. Behind the scenes the request is dispatched to the right backend (faster-whisper for the whisper family, NeMo for everything else), audio is normalized to 16 kHz mono WAV, long files are sliced via Silero VAD into ≤28-second speech regions, results are stitched back into one Whisper-shape timeline. None of that leaks into the wire shape. You just get text.
 
 For TTS there are two slugs:
 
@@ -148,13 +148,12 @@ Seven ASR models + two TTS models, all publicly available with permissive licens
 |---|---|---|---|---|---|
 | `whisper-large-v3` | `Systran/faster-whisper-large-v3` | faster-whisper (CTranslate2) | CPU + CUDA | 99 (auto-detect) | MIT |
 | `whisper-large-v3-turbo` | `deepdml/faster-whisper-large-v3-turbo-ct2` | faster-whisper (CTranslate2) | CPU + CUDA | 99 (auto-detect) | MIT |
-| `distil-whisper-large-v3` | `Systran/faster-distil-whisper-large-v3` | faster-whisper (CTranslate2) | CPU + CUDA | English | MIT |
 | `parakeet-tdt-0.6b-v3` | `nvidia/parakeet-tdt-0.6b-v3` | NeMo (TDT) | CUDA only | English | CC-BY-4.0 |
 | `canary-180m-flash` | `nvidia/canary-180m-flash` | NeMo Canary (multitask) | CPU + CUDA | English (ASR only on this size) | CC-BY-4.0 |
 | `canary-1b-flash` | `nvidia/canary-1b-flash` | NeMo Canary (multitask) | CUDA only | en, de, fr, es (ASR + X→en / en→X translation) | CC-BY-4.0 |
 | `canary-qwen-2.5b` | `nvidia/canary-qwen-2.5b` | NeMo Canary SALM (Qwen2 decoder) | CUDA only | English | CC-BY-4.0 |
 
-The three Whisper variants are tokenized + executed through [faster-whisper](https://github.com/SYSTRAN/faster-whisper), which is roughly 4× faster than the reference OpenAI implementation at the same accuracy on the same hardware. The four NVIDIA models go through NeMo's native inference path — Parakeet uses the TDT decoder, Canary models use the multitask transformer head, Canary-Qwen swaps the decoder for a Qwen2 LLM (the "speech-augmented language model" trick that lets you tack instructions onto the prompt).
+Both Whisper variants are tokenized + executed through [faster-whisper](https://github.com/SYSTRAN/faster-whisper), which is roughly 4× faster than the reference OpenAI implementation at the same accuracy on the same hardware. The four NVIDIA models go through NeMo's native inference path — Parakeet uses the TDT decoder, Canary models use the multitask transformer head, Canary-Qwen swaps the decoder for a Qwen2 LLM (the "speech-augmented language model" trick that lets you tack instructions onto the prompt).
 
 ### TTS (`POST /v1/audio/speech`)
 

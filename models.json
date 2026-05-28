@@ -8,10 +8,6 @@
       "repo": "deepdml/faster-whisper-large-v3-turbo-ct2",
       "executor": "whisper"
     },
-    "distil-whisper-large-v3": {
-      "repo": "Systran/faster-distil-whisper-large-v3",
-      "executor": "whisper"
-    },
     "parakeet-tdt-0.6b-v3": {
       "repo": "nvidia/parakeet-tdt-0.6b-v3",
       "executor": "parakeet"

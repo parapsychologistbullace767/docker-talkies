@@ -11,7 +11,7 @@ metadata:
 
 Self-hosted speech service — ASR and TTS, one container. OpenAI-compatible wire shape on both endpoints; point an OpenAI client at it, change the model slug, done.
 
-ASR (`POST /v1/audio/transcriptions`): seven backends — `whisper-large-v3`, `whisper-large-v3-turbo`, `distil-whisper-large-v3`, `parakeet-tdt-0.6b-v3`, `canary-180m-flash`, `canary-1b-flash`, `canary-qwen-2.5b`.
+ASR (`POST /v1/audio/transcriptions`): six backends — `whisper-large-v3`, `whisper-large-v3-turbo`, `parakeet-tdt-0.6b-v3`, `canary-180m-flash`, `canary-1b-flash`, `canary-qwen-2.5b`.
 
 TTS (`POST /v1/audio/speech`): two engines — `kokoro-82m` with 41 baked voices across en/es/fr/hi/it/pt, and `qwen3-tts-0.6b` for CUDA-only voice cloning from reference clips (three builtin samples plus any `.wav` you drop into `/data/custom-voices/`, including nested subdirs). Both discovered via `GET /v1/audio/voices`.
 
@@ -109,7 +109,6 @@ curl -s $TALKIES_URL/v1/audio/speech \
 |---|---|---|---|---|---|
 | `whisper-large-v3` | faster-whisper | yes | yes | 99 auto-detect | best accuracy, slowest |
 | `whisper-large-v3-turbo` | faster-whisper | yes | yes | 99 auto-detect | sweet spot — fast, accurate |
-| `distil-whisper-large-v3` | faster-whisper | yes | yes | English only | fastest Whisper variant |
 | `parakeet-tdt-0.6b-v3` | NeMo TDT | no | yes | English only | very fast on GPU |
 | `canary-180m-flash` | NeMo Canary | yes | yes | English only (small) | smallest, runs anywhere |
 | `canary-1b-flash` | NeMo Canary | no | yes | en/de/fr/es + translation | multilingual, translation |
@@ -117,7 +116,6 @@ curl -s $TALKIES_URL/v1/audio/speech \
 
 Pick by use case:
 - **General-purpose:** `whisper-large-v3-turbo`.
-- **English-only, max speed on CPU:** `distil-whisper-large-v3`.
 - **English-only, max accuracy on GPU:** `canary-qwen-2.5b` (but no per-segment timestamps).
 - **Translation EN↔DE/FR/ES:** `canary-1b-flash` (requires custom model registry — see [Translation](#translation)).
 
