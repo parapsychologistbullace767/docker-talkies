@@ -117,7 +117,8 @@ COPY --chown=talkies:talkies pyproject.toml ./
 COPY --chown=talkies:talkies models.json /app/models.json
 COPY --chown=talkies:talkies voices/qwen3/ /opt/talkies/qwen3-voices/
 COPY --chown=talkies:talkies entrypoint.sh /usr/local/bin/talkies-entrypoint
-RUN chmod +x /usr/local/bin/talkies-entrypoint
+RUN sed -i 's/\r$//' /usr/local/bin/talkies-entrypoint \
+    && chmod +x /usr/local/bin/talkies-entrypoint
 
 USER talkies
 
